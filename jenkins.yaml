@@ -1,1 +1,290 @@
-
+---
+apiVersion: helm.fluxcd.io/v1
+kind: HelmRelease
+metadata:
+  name: jenkins
+spec:
+  releaseName: jenkins
+  chart:
+    repository: https://charts.jenkins.io
+    name: jenkins
+    version: 2.6.4
+  values:
+    serviceAccount:
+      create: true
+      name: jenkins-master
+      annotations:
+        eks.amazonaws.com/role-arn: arn:aws:iam::{{ AWS_ACCOUNT }}:role/eks/jenkins-master
+    master:
+      image: docker.artifactory.mgmt.aws.uk.tsb/docker-remote/jenkins/jenkins
+      tag: 2.289.3-lts-alpine
+      nodeSelector:
+        taints.eks.aws.uk.tsb/role: mgmt
+      tolerations:
+        - key: role
+          operator: Equal
+          value: mgmt
+          effect: NoSchedule
+      resources:
+        limits:
+          cpu: 1
+      # Environment variables that get added to the init container (useful for e.g. http_proxy)
+      initContainerEnv:
+        - name: http_proxy
+          value: http://eu-west-2.proxy.aws.uk.tsb:3128
+        - name: https_proxy
+          value: http://eu-west-2.proxy.aws.uk.tsb:3128
+        - name: no_proxy
+          value: localhost,127.0.0.1,169.254.169.254,10.0.0.0/8,172.20.0.0/16,.internal,.eu-west-2.elb.amazonaws.com,vault.service.consul,ssm.eu-west-2.amazonaws.com,ssmmessages.eu-west-2.amazonaws.com,ec2.eu-west-2.amazonaws.com,ec2messages.eu-west-2.amazonaws.com,s3.eu-west-2.amazonaws.com,autoscaling.eu-west-2.amazonaws.com,secretsmanager.eu-west-2.amazonaws.com,kms.eu-west-2.amazonaws.com,ecr.eu-west-2.amazonaws.com,.eks.amazonaws.com,.ecr.eu-west-2.amazonaws.com,.s3.eu-west-2.amazonaws.com,.cluster.local,.aws.uk.tsb
+      containerEnv:
+        - name: http_proxy
+          value: http://eu-west-2.proxy.aws.uk.tsb:3128
+        - name: https_proxy
+          value: http://eu-west-2.proxy.aws.uk.tsb:3128
+        - name: no_proxy
+          value: localhost,127.0.0.1,169.254.169.254,10.0.0.0/8,172.20.0.0/16,.internal,.eu-west-2.elb.amazonaws.com,vault.service.consul,ssm.eu-west-2.amazonaws.com,ssmmessages.eu-west-2.amazonaws.com,ec2.eu-west-2.amazonaws.com,ec2messages.eu-west-2.amazonaws.com,s3.eu-west-2.amazonaws.com,autoscaling.eu-west-2.amazonaws.com,secretsmanager.eu-west-2.amazonaws.com,kms.eu-west-2.amazonaws.com,ecr.eu-west-2.amazonaws.com,.eks.amazonaws.com,.ecr.eu-west-2.amazonaws.com,.s3.eu-west-2.amazonaws.com,.cluster.local,.aws.uk.tsb
+      installPlugins:
+        - kubernetes-client-api:4.13.3-1
+        - kubernetes:1.27.7
+        - git:4.8.3
+        - pipeline-aws:1.42
+        - aws-credentials:1.30
+        - aws-global-configuration:1.6
+        - custom-tools-plugin:0.7
+        - docker-plugin:1.2.0
+        - extra-tool-installers:1.0
+        - git-parameter:0.9.13
+        - github-branch-source:2.9.0
+        - http_request:1.8.26
+        - job-dsl:1.77
+        - jdk-tool:1.4
+        - pipeline-utility-steps:2.6.1
+        - pipeline-github:2.7
+        - slack:2.42
+        - artifactory:3.10.6
+        - build-timeout:1.20
+        - build-timestamp:1.0.3
+        - dashboard-view:2.16
+        - jira:3.1.1
+        - sonar:2.12
+      JCasC:
+        securityRealm: |-
+          local:
+            allowsSignup: false
+            users:
+              - id: "${ADMIN_USER}"
+                password: "${ADMIN_PASSWORD}"
+        authorizationStrategy: {}
+        configScripts:
+          github: |-
+            unclassified:
+              gitHubPluginConfig:
+                hookUrl: "https://jenkins.{{ DNS_ZONE }}/github-webhook/"
+                configs:
+                  - name: "GitHub"
+                    credentialsId: "github"
+                    manageHooks: true
+          libraries: |-
+            unclassified:
+              globalLibraries:
+                libraries:
+                  - name: "rax-jenkins-shared-library"
+                    defaultVersion: "v1.0"
+                    retriever:
+                      modernSCM:
+                        scm:
+                          github:
+                            credentialsId: "github-job"
+                            repoOwner: "TSB-Bank"
+                            repository: "rax-jenkins-shared-library"
+                            traits:
+                              - gitHubBranchDiscovery:
+                                  strategyId: 1
+                              - gitHubPullRequestDiscovery:
+                                  strategyId: 1
+                              - gitHubForkDiscovery:
+                                  strategyId: 1
+                                  trust: "gitHubTrustPermissions"
+          proxy: |-
+            jenkins:
+              proxy:
+                name: "eu-west-2.proxy.aws.uk.tsb"
+                port: 3128
+                noProxyHost: "localhost,127.0.0.1,169.254.169.254,10.0.0.0/8,172.20.0.0/16,.internal,.eu-west-2.elb.amazonaws.com,vault.service.consul,ssm.eu-west-2.amazonaws.com,ssmmessages.eu-west-2.amazonaws.com,ec2.eu-west-2.amazonaws.com,ec2messages.eu-west-2.amazonaws.com,s3.eu-west-2.amazonaws.com,autoscaling.eu-west-2.amazonaws.com,secretsmanager.eu-west-2.amazonaws.com,kms.eu-west-2.amazonaws.com,ecr.eu-west-2.amazonaws.com,.eks.amazonaws.com,.ecr.eu-west-2.amazonaws.com,.s3.eu-west-2.amazonaws.com,.cluster.local,.aws.uk.tsb"
+          tools: |-
+            tool:
+              customTool:
+                installations:"
+                  - name: "skaffold"
+                    properties:
+                      - installSource:
+                          installers:
+                            - command:
+                                command: |-
+                                  curl -Lo skaffold https://storage.googleapis.com/skaffold/releases/latest/skaffold-linux-amd64
+                                  /home/jenkins/.local/bin/skaffold install --user skaffold
+                                toolHome: "/home/jenkins/.local/bin"
+      jenkinsUrl: https://jenkins.{{ DNS_ZONE }}
+      slaveJenkinsUrl: http://jenkins.jenkins.svc.cluster.local:8080
+      slaveJenkinsTunnel: jenkins-agent.jenkins.svc.cluster.local:50000
+    agent:
+      image: docker.artifactory.mgmt.aws.uk.tsb/docker-remote/jenkins/inbound-agent
+      tag: 4.3-4
+      nodeSelector:
+        taints.eks.aws.uk.tsb/role: mgmt
+      componentName: jenkins-agent
+      resources:
+        limits:
+          memory: 4Gi
+      envVars:
+        - name: http_proxy
+          value: http://eu-west-2.proxy.aws.uk.tsb:3128
+        - name: https_proxy
+          value: http://eu-west-2.proxy.aws.uk.tsb:3128
+        - name: no_proxy
+          value: localhost,127.0.0.1,169.254.169.254,10.0.0.0/8,172.20.0.0/16,.internal,.eu-west-2.elb.amazonaws.com,vault.service.consul,ssm.eu-west-2.amazonaws.com,ssmmessages.eu-west-2.amazonaws.com,ec2.eu-west-2.amazonaws.com,ec2messages.eu-west-2.amazonaws.com,s3.eu-west-2.amazonaws.com,autoscaling.eu-west-2.amazonaws.com,secretsmanager.eu-west-2.amazonaws.com,kms.eu-west-2.amazonaws.com,ecr.eu-west-2.amazonaws.com,.eks.amazonaws.com,.ecr.eu-west-2.amazonaws.com,.s3.eu-west-2.amazonaws.com,.cluster.local,.aws.uk.tsb
+      yamlTemplate: |-
+        apiVersion: v1
+        kind: Pod
+        spec:
+          serviceAccountName: jenkins-agent
+          securityContext:
+            fsGroup: 1337
+          tolerations:
+            - key: role
+              operator: Equal
+              value: mgmt
+              effect: NoSchedule
+      podTemplates:
+          jnlp-forgerock: |
+          - name: jnlp-forgerock
+            label: tsb-forgerock
+            namespace: forgerock
+            serviceAccount: tsb-forgerock
+            nodeSelector: taints.eks.aws.uk.tsb/role=mgmt
+            imagePullSecrets:
+              - name: "artifactory-credentials"
+            hostNetwork: false
+            yaml: |-
+              apiVersion: v1
+              kind: Pod
+              metadata:
+                # namespace: forgerock
+              spec:
+                # serviceAccountName: tsb-forgerock
+                securityContext:
+                  runAsUser: 0
+                  fsGroup: 1337
+                tolerations:
+                  - key: role
+                    operator: Equal
+                    value: mgmt
+                    effect: NoSchedule
+            envVars:
+              - envVar:
+                  key: http_proxy
+                  value: http://eu-west-2.proxy.aws.uk.tsb:3128
+              - envVar:
+                  key: https_proxy
+                  value: http://eu-west-2.proxy.aws.uk.tsb:3128
+              - envVar:
+                  key: no_proxy
+                  value: localhost,127.0.0.1,172.20.0.1,169.254.169.254,10.0.0.0/8,172.20.0.0/16,.internal,.eu-west-2.elb.amazonaws.com,vault.service.consul,ssm.eu-west-2.amazonaws.com,ssmmessages.eu-west-2.amazonaws.com,ec2.eu-west-2.amazonaws.com,ec2messages.eu-west-2.amazonaws.com,s3.eu-west-2.amazonaws.com,autoscaling.eu-west-2.amazonaws.com,secretsmanager.eu-west-2.amazonaws.com,kms.eu-west-2.amazonaws.com,ecr.eu-west-2.amazonaws.com,.eks.amazonaws.com,.ecr.eu-west-2.amazonaws.com,.s3.eu-west-2.amazonaws.com,.cluster.local,.aws.uk.tsb
+            containers:
+            - name: "jnlp"
+              args: "^${computer.jnlpmac} ^${computer.name}"
+              envVars:
+              - envVar:
+                  key: "JENKINS_URL"
+                  value: "http://jenkins.jenkins.svc.cluster.local:8080"
+              image: "docker.artifactory.mgmt.aws.uk.tsb/cob/jenkins-cicd/jenkins-jnlp-slave:11-6c5cc13"
+              workingDir: "/home/jenkins/agent"
+              livenessProbe:
+                failureThreshold: 0
+                initialDelaySeconds: 0
+                periodSeconds: 0
+                successThreshold: 0
+                timeoutSeconds: 0
+            - name: "gradle"
+              args: "cat"
+              command: "/bin/sh -c"
+              envVars:
+              - envVar:
+                  key: "GRADLE_OPTS"
+                  value: -Djavax.net.ssl.trustStore=/home/jenkins/publiccacerts/jenkins.truststore.jks -Djavax.net.ssl.trustStorePassword=changeit -Dhttp.proxyHost=eu-west-2.proxy.aws.uk.tsb -Dhttp.proxyPort=3128 -Dhttps.proxyHost=eu-west-2.proxy.aws.uk.tsb -Dhttps.proxyPort=3128 -Dhttp.nonProxyHosts="localhost|127.0.0.1|172.20.0.1|169.254.169.254|10.0.0.0/8|172.20.0.0/16|.internal|.eu-west-2.elb.amazonaws.com|vault.service.consul|ssm.eu-west-2.amazonaws.com|ssmmessages.eu-west-2.amazonaws.com|ec2.eu-west-2.amazonaws.com|ec2messages.eu-west-2.amazonaws.com|s3.eu-west-2.amazonaws.com|autoscaling.eu-west-2.amazonaws.com|secretsmanager.eu-west-2.amazonaws.com|kms.eu-west-2.amazonaws.com|ecr.eu-west-2.amazonaws.com|.eks.amazonaws.com|.ecr.eu-west-2.amazonaws.com|.s3.eu-west-2.amazonaws.com|.cluster.local|*.aws.uk.tsb" -Dhttps.nonProxyHosts="localhost|127.0.0.1|172.20.0.1|169.254.169.254|10.0.0.0/8|172.20.0.0/16|.internal|.eu-west-2.elb.amazonaws.com|vault.service.consul|ssm.eu-west-2.amazonaws.com|ssmmessages.eu-west-2.amazonaws.com|ec2.eu-west-2.amazonaws.com|ec2messages.eu-west-2.amazonaws.com|s3.eu-west-2.amazonaws.com|autoscaling.eu-west-2.amazonaws.com|secretsmanager.eu-west-2.amazonaws.com|kms.eu-west-2.amazonaws.com|ecr.eu-west-2.amazonaws.com|.eks.amazonaws.com|.ecr.eu-west-2.amazonaws.com|.s3.eu-west-2.amazonaws.com|.cluster.local|*.aws.uk.tsb"
+              - envVar:
+                  key: "JENKINS_URL"
+                  value: "http://jenkins.jenkins.svc.cluster.local:8080"
+              image: "docker.artifactory.mgmt.aws.uk.tsb/cob/jenkins-cicd/gradle:11-6c5cc13"
+              livenessProbe:
+                failureThreshold: 0
+                initialDelaySeconds: 0
+                periodSeconds: 0
+                successThreshold: 0
+                timeoutSeconds: 0
+              ttyEnabled: true
+              workingDir: "/home/jenkins/agent"
+            - name: "maven"
+              args: "cat"
+              command: "/bin/sh -c"
+              envVars:
+              - envVar:
+                  key: "MAVEN_OPTS"
+                  value: "-Dhttp.proxyHost=eu-west-2.proxy.aws.uk.tsb -Dhttp.proxyPort=3128 -Dhttps.proxyHost=eu-west-2.proxy.aws.uk.tsb -Dhttps.proxyPort=3128 -Dhttp.nonProxyHosts=localhost,127.0.0.1,172.20.0.1,169.254.169.254,10.0.0.0/8,172.20.0.0/16,.internal,.eu-west-2.elb.amazonaws.com,vault.service.consul,ssm.eu-west-2.amazonaws.com,ssmmessages.eu-west-2.amazonaws.com,ec2.eu-west-2.amazonaws.com,ec2messages.eu-west-2.amazonaws.com,s3.eu-west-2.amazonaws.com,autoscaling.eu-west-2.amazonaws.com,secretsmanager.eu-west-2.amazonaws.com,kms.eu-west-2.amazonaws.com,ecr.eu-west-2.amazonaws.com,.eks.amazonaws.com,.ecr.eu-west-2.amazonaws.com,.s3.eu-west-2.amazonaws.com,.cluster.local,.aws.uk.tsb"
+              - envVar:
+                  key: "JENKINS_URL"
+                  value: "http://jenkins.jenkins.svc.cluster.local:8080"
+              image: "docker.artifactory.mgmt.aws.uk.tsb/cob/jenkins-cicd/maven:11-6c5cc13"
+              livenessProbe:
+                  failureThreshold: 0
+                  initialDelaySeconds: 0
+                  periodSeconds: 0
+                  successThreshold: 0
+                  timeoutSeconds: 0
+              ttyEnabled: true
+              workingDir: "/home/jenkins/agent"
+            - name: "golang"
+              args: "cat"
+              command: "/bin/sh -c"
+              envVars:
+              - envVar:
+                  key: "JENKINS_URL"
+                  value: "http://jenkins.jenkins.svc.cluster.local:8080"
+              image: "docker pull gcr.io/gcp-runtimes/go1-builder:1.9"
+              livenessProbe:
+                  failureThreshold: 0
+                  initialDelaySeconds: 0
+                  periodSeconds: 0
+                  successThreshold: 0
+                  timeoutSeconds: 0
+              ttyEnabled: true
+              workingDir: "/home/jenkins/agent"
+            - name: "python"
+              args: "cat"
+              command: "/bin/sh -c"
+              image: "docker.artifactory.mgmt.aws.uk.tsb/cob/jenkins-cicd/python:11-6c5cc13"
+              livenessProbe:
+                failureThreshold: 0
+                initialDelaySeconds: 0
+                periodSeconds: 0
+                successThreshold: 0
+                timeoutSeconds: 0
+              ttyEnabled: true
+              workingDir: "/home/jenkins/agent"
+              envVars:
+              - envVar:
+                  key: "JENKINS_URL"
+                  value: "http://jenkins.jenkins.svc.cluster.local:8080"
+            volumes:
+            - secretVolume:
+                mountPath: "/home/jenkins/publiccacerts"
+                secretName: "jenkins-truststore"
+            - secretVolume:
+                mountPath: "/home/jenkins/cacert"
+                secretName: "cacert-truststore"
+            - emptyDirVolume:
+                memory: true
+                mountPath: "/home/jenkins/.aws/cli"
+            - hostPathVolume:
+                hostPath: "/var/run/docker.sock"
+                mountPath: "/var/run/docker.sock"
